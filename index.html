@@ -7,6 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Beat Tap</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -82,16 +85,33 @@
     <div class="panel">
       <h1 id="win-title"></h1>
       <p id="win-text"></p>
-      <div class="ticket">
-        <div class="ticket-head" id="v-heading"></div>
-        <div class="ticket-for">für <b id="v-recipient"></b></div>
-        <div class="ticket-title" id="v-title"></div>
-        <div class="ticket-details" id="v-details"></div>
-        <div class="ticket-foot">
-          <span>von <b id="v-from"></b></span>
-          <span id="v-code"></span>
+      <div class="card-scene" id="card-scene">
+        <div class="card-tilt">
+          <div class="card-float">
+            <div class="card-flip" id="card-flip">
+              <!-- Vorderseite: Logo -->
+              <div class="card-face card-front">
+                <img id="v-logo" alt="">
+                <div class="card-fallback" id="v-front-title"></div>
+                <span class="card-tag" id="v-heading"></span>
+              </div>
+              <!-- Rückseite: Details -->
+              <div class="card-face card-back">
+                <div class="card-back-head" id="v-heading-back"></div>
+                <div class="card-for">für <b id="v-recipient"></b></div>
+                <div class="card-title" id="v-title"></div>
+                <div class="card-details" id="v-details"></div>
+                <div class="card-foot">
+                  <span>von <b id="v-from"></b></span>
+                  <span id="v-code"></span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+        <div class="card-shadow"></div>
       </div>
+      <p class="hint">👆 Tippe auf die Karte, um sie umzudrehen</p>
       <p class="hint">📸 Tipp: Mach einen Screenshot von deinem Gutschein!</p>
       <button id="btn-again" class="btn ghost">Nochmal spielen</button>
     </div>

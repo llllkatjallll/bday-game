@@ -20,6 +20,9 @@ window.GAME_CONFIG = {
     title: "Ein Arcade-Spiele-Tag",
     details: "Inklusive Spielguthaben, Snacks und jeder Menge Highscores. Termin suchst du dir aus! 🕹️",
     code: "ARCADE-2026",
+    // Vorderseite der Karte: Logo (wird schwarz eingefärbt) auf farbigem Grund
+    logo: "logo/es-webdev-vorlage-02.png",
+    cardColor: "#ff4413",
   },
 
   // Standard-Schwierigkeit: "easy", "normal" oder "hard"

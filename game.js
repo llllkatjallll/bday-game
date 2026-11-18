@@ -47,21 +47,49 @@
   }
 
   // ---------- Notenmuster passend zur Musik erzeugen ----------
-  // Verteilt Noten auf freie Felder (ein Feld ist erst wieder frei, wenn die alte Note durch ist)
+  // Verteilt Noten auf dem 4×4-Feld. Die Position folgt der Melodie:
+  //  Ton höher → eine Reihe nach oben, tiefer → nach unten, gleich → seitlich weiter.
+  //  Dabei wandert die Position Schritt für Schritt (Treppen, Wellen …) statt zu springen.
+  //  Ohne Tonhöhe: sanfter Zufallsweg zu Nachbarfeldern.
+  //  Ein Feld ist erst wieder frei, wenn die alte Note durch ist.
   function makePlacer(D, rnd, notes) {
     const last = new Array(16).fill(-99);
     const gap = D.approach + D.win[2] + 0.08;
-    let prev = [];
-    return (t, count) => {
-      const cand = [];
-      for (let c = 0; c < 16; c++) if (t - last[c] >= gap && !prev.includes(c)) cand.push(c);
-      for (let i = cand.length - 1; i > 0; i--) {
-        const j = (rnd() * (i + 1)) | 0;
-        [cand[i], cand[j]] = [cand[j], cand[i]];
+    let prev = [], r = 1, c = 1, dir = 1, prevPitch = null;
+    const free = (cell, t, excl) => t - last[cell] >= gap && !prev.includes(cell) && !excl.includes(cell);
+    const nearest = (rr, cc, t, excl = []) => {
+      let best = -1, bd = Infinity;
+      for (let cell = 0; cell < 16; cell++) {
+        if (!free(cell, t, excl)) continue;
+        const d = Math.abs((cell >> 2) - rr) * 1.1 + Math.abs((cell & 3) - cc) + rnd() * 0.05;
+        if (d < bd) { bd = d; best = cell; }
       }
-      const pick = cand.slice(0, count);
-      pick.forEach((c) => { last[c] = t; notes.push({ t, cell: c, judged: false }); });
-      if (pick.length) prev = pick;
+      return best;
+    };
+    return (t, count, pitch) => {
+      let dr;
+      if (pitch != null && prevPitch != null) {
+        const d = pitch - prevPitch, ad = Math.abs(d);
+        dr = ad < 0.6 ? 0 : (ad >= 5 && ad < 10 ? 2 : 1) * (d < 0 ? 1 : -1); // tiefer = weiter unten
+      } else {
+        dr = rnd() < 0.5 ? 0 : rnd() < 0.5 ? 1 : -1;
+      }
+      if (pitch != null) prevPitch = pitch;
+      let nc = c + dir;
+      if (nc < 0 || nc > 3) { dir = -dir; nc = c + dir; }
+      let nr = r + dr;
+      if (nr > 3) nr -= 4; // unten raus → oben weiter (Treppe läuft weiter runter)
+      if (nr < 0) nr += 4;
+      const first = nearest(nr, nc, t);
+      if (first < 0) return;
+      const pick = [first];
+      r = first >> 2; c = first & 3;
+      if (count > 1) {
+        const second = nearest(r, 3 - c, t, pick); // gespiegelt auf der anderen Seite
+        if (second >= 0) pick.push(second);
+      }
+      pick.forEach((cell) => { last[cell] = t; notes.push({ t, cell, judged: false }); });
+      prev = pick;
     };
   }
 
@@ -457,41 +485,94 @@
     const loudMed = pct(beats.map((b) => b.loud), 0.5) || 1;
     beats.forEach((b) => { b.s /= ref; b.off.s /= ref; b.loud /= loudMed; });
 
+    // 7) Tonhöhe einer Note schätzen: neu hinzugekommene Obertöne (Spektrum nach minus vor dem
+    //    Einsatz) → Grundton mit der stärksten harmonischen Summe. Ergebnis in Halbtönen (MIDI).
+    const N2 = 4096, fft2 = makeFFT(N2);
+    const win2 = new Float32Array(N2);
+    for (let i = 0; i < N2; i++) win2[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N2);
+    const maxB2 = Math.round((6000 * N2) / sr);
+    const re2 = new Float32Array(N2), im2 = new Float32Array(N2);
+    const spec = (ct) => {
+      const base = n0 + Math.round(ct * sr) - N2 / 2;
+      for (let i = 0; i < N2; i++) {
+        let x = 0;
+        for (const ch of chs) x += ch[base + i] || 0;
+        re2[i] = (x / chs.length) * win2[i];
+        im2[i] = 0;
+      }
+      fft2(re2, im2);
+      const m = new Float32Array(maxB2);
+      for (let k = 0; k < maxB2; k++) m[k] = Math.sqrt(re2[k] * re2[k] + im2[k] * im2[k]);
+      return m;
+    };
+    const pitchCache = new Map();
+    const pitchAt = (t) => {
+      const key = Math.round(t * 1000);
+      if (pitchCache.has(key)) return pitchCache.get(key);
+      const A = spec(t + 0.06), B = spec(t - 0.06);
+      const dif = new Float32Array(maxB2);
+      let sA = 0, sD = 0;
+      for (let k = 0; k < maxB2; k++) { dif[k] = Math.max(0, A[k] - 0.7 * B[k]); sA += A[k]; sD += dif[k]; }
+      const S = sD > 0.15 * sA ? dif : A;
+      const at = (bin) => { const i = Math.floor(bin), f = bin - i; return i + 1 < maxB2 ? S[i] * (1 - f) + S[i + 1] * f : 0; };
+      let best = -1, bestM = null;
+      for (let m = 45; m <= 96; m += 1 / 3) {
+        const f0 = 440 * Math.pow(2, (m - 69) / 12);
+        let s = 0;
+        for (let h = 1; h <= 6; h++) {
+          const bin = (h * f0 * N2) / sr;
+          if (bin >= maxB2 - 1) break;
+          s += Math.pow(0.8, h - 1) * at(bin);
+        }
+        if (s > best) { best = s; bestM = m; }
+      }
+      pitchCache.set(key, bestM);
+      return bestM;
+    };
+
     return {
-      period: bestP, bpm: 60 / bestP, firstBeat: start + bestPh, dur, beats, peaks, gridFit, mode,
+      period: bestP, bpm: 60 / bestP, firstBeat: start + bestPh, dur, beats, peaks, gridFit, mode, pitchAt,
       cdBeat: Math.min(0.75, Math.max(0.45, bestP)), // Takt für den 3-2-1-Countdown
     };
   }
 
   function buildSongChart(D, info, seed) {
-    return info.mode === 'onset' ? buildOnsetChart(D, info, seed) : buildBeatChart(D, info, seed);
-  }
-
-  // Noten direkt auf hörbare Einsätze – folgt auch Tempowechseln (Klassik, Rubato …)
-  function buildOnsetChart(D, info, seed) {
-    const rnd = mulberry32(seed);
+    const events = info.mode === 'onset' ? onsetEvents(D, info) : beatEvents(D, info, mulberry32(seed + 1));
+    if (!events.length) return [];
+    // Die stärksten/lautesten Noten werden Doppel-Tabs (Anteil je nach Schwierigkeit)
+    const share = D.doubles * 0.7;
+    const pw = events.filter((e) => e.canDouble).map((e) => e.power).sort((a, b) => a - b);
+    const thr = pw.length ? pw[Math.min(pw.length - 1, Math.floor((1 - share) * pw.length))] : Infinity;
     const notes = [];
-    const place = makePlacer(D, rnd, notes);
-    const firstT = 4 * info.cdBeat + 0.6;
-    const lastT = info.dur - 3.5;
-    const cands = info.peaks
-      .filter((p) => p.t >= firstT && p.t <= lastT && p.loud > 0.3 && (p.sg >= 0.12 || p.sl >= 0.5))
-      .map((p) => ({ t: p.t, score: 0.5 * Math.min(p.sg, 2) + 0.5 * Math.min(p.sl, 2) }))
-      .sort((a, b) => b.score - a.score);
-    const picked = [];
-    for (const c of cands) if (picked.every((a) => Math.abs(a.t - c.t) >= D.minGap)) picked.push(c);
-    picked.sort((a, b) => a.t - b.t);
-    picked.forEach((c, i) => {
-      const last = i === picked.length - 1;
-      place(c.t, last || rnd() < D.doubles * (c.score > 1.1 ? 1.5 : 0.3) ? 2 : 1);
+    const place = makePlacer(D, mulberry32(seed), notes);
+    events.forEach((e, i) => {
+      const dbl = i === events.length - 1 || (e.canDouble && e.power >= thr);
+      place(e.t, dbl ? 2 : 1, info.pitchAt(e.t));
     });
     return notes;
   }
 
-  function buildBeatChart(D, info, seed) {
-    const rnd = mulberry32(seed);
-    const notes = [];
-    const place = makePlacer(D, rnd, notes);
+  // Noten direkt auf hörbare Einsätze – folgt auch Tempowechseln (Klassik, Rubato …)
+  function onsetEvents(D, info) {
+    const firstT = 4 * info.cdBeat + 0.6;
+    const lastT = info.dur - 3.5;
+    const cands = info.peaks
+      .filter((p) => p.t >= firstT && p.t <= lastT && p.loud > 0.3 && (p.sg >= 0.12 || p.sl >= 0.5))
+      .map((p) => ({
+        t: p.t,
+        score: 0.5 * Math.min(p.sg, 2) + 0.5 * Math.min(p.sl, 2),
+        power: p.sg * (0.5 + 0.5 * Math.min(p.loud, 2)), // Anschlag × Lautstärke
+        canDouble: true,
+      }))
+      .sort((a, b) => b.score - a.score);
+    const picked = [];
+    for (const c of cands) if (picked.every((a) => Math.abs(a.t - c.t) >= D.minGap)) picked.push(c);
+    return picked.sort((a, b) => a.t - b.t);
+  }
+
+  // Noten auf einem festen Beat-Raster (gleichmäßiger Takt)
+  function beatEvents(D, info, rnd) {
+    const ev = [];
     const p = info.period;
     const fast = p < 0.42; // bei schnellen Songs nur jeden 2. Beat als Hauptnote (außer „Schwer“)
     const firstT = 4 * info.cdBeat + 0.6;
@@ -503,16 +584,17 @@
       if (b.t > lastT) { if (!lastBeat) lastBeat = b; continue; }
       if (b.loud < 0.35) continue; // leise Stelle → Pause
       const main = !fast || D === DIFFS.hard || i % 2 === 0;
+      const power = b.s * (0.5 + 0.5 * Math.min(b.loud, 2));
       if (main) {
-        if (rnd() < (b.s < 0.15 ? 0.35 : 1)) place(b.t, rnd() < D.doubles * (0.4 + 0.6 * Math.min(1, b.s)) ? 2 : 1);
+        if (rnd() < (b.s < 0.15 ? 0.35 : 1)) ev.push({ t: b.t, power, canDouble: true });
         const o = b.off;
-        if (D.eighths && p / 2 >= 0.24 && rnd() < D.eighths * Math.min(1, o.s)) place(o.t, 1);
+        if (D.eighths && p / 2 >= 0.24 && rnd() < D.eighths * Math.min(1, o.s)) ev.push({ t: o.t, power: 0, canDouble: false });
       } else if (D.eighths && rnd() < D.eighths * Math.min(1, b.s)) {
-        place(b.t, 1);
+        ev.push({ t: b.t, power: 0, canDouble: false });
       }
     }
-    if (lastBeat) place(lastBeat.t, 2); // Schluss: zwei Felder
-    return notes;
+    if (lastBeat) ev.push({ t: lastBeat.t, power: 0, canDouble: false });
+    return ev;
   }
 
   function playSong(t0) {
@@ -768,11 +850,29 @@
     $('#win-title').textContent = C.winTitle || 'Herzlichen Glückwunsch!';
     $('#win-text').textContent = C.winText || '';
     $('#v-heading').textContent = v.heading || 'GUTSCHEIN';
+    $('#v-heading-back').textContent = v.heading || 'GUTSCHEIN';
     $('#v-recipient').textContent = C.recipientName || '';
     $('#v-title').textContent = v.title || '';
     $('#v-details').textContent = v.details || '';
     $('#v-from').textContent = C.fromName || '';
     $('#v-code').textContent = v.code || '';
+    const scene = $('#card-scene');
+    if (v.cardColor) scene.style.setProperty('--card', v.cardColor);
+    const logo = $('#v-logo');
+    if (v.logo) {
+      logo.src = v.logo;
+      logo.hidden = false;
+      $('#v-front-title').hidden = true;
+      logo.onerror = () => { logo.hidden = true; $('#v-front-title').hidden = false; };
+    } else {
+      logo.hidden = true;
+    }
+    $('#v-front-title').textContent = v.title || '';
+    $('#card-flip').classList.remove('flipped');
+    // Karten-Animation neu starten
+    scene.style.animation = 'none';
+    void scene.offsetWidth;
+    scene.style.animation = '';
     show('win');
     startConfetti();
     if (ctx) {
@@ -781,6 +881,34 @@
       chord(t + 0.48, [60, 64, 67, 72], 1.2, 0.04);
     }
   }
+
+  // Karte folgt Finger/Maus; kurzes Tippen dreht sie um
+  (() => {
+    const scene = $('#card-scene');
+    let down = null;
+    const tilt = (e) => {
+      const r = scene.getBoundingClientRect();
+      const x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+      const y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
+      scene.style.setProperty('--ry', `${x * 16}deg`);
+      scene.style.setProperty('--rx', `${-y * 12}deg`);
+      scene.style.setProperty('--gx', x.toFixed(3));
+      scene.style.setProperty('--gy', y.toFixed(3));
+    };
+    const reset = () => {
+      ['--rx', '--ry'].forEach((p) => scene.style.setProperty(p, '0deg'));
+      ['--gx', '--gy'].forEach((p) => scene.style.setProperty(p, '0'));
+    };
+    scene.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; tilt(e); });
+    scene.addEventListener('pointermove', (e) => { if (down || e.pointerType === 'mouse') tilt(e); });
+    scene.addEventListener('pointerup', (e) => {
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12) $('#card-flip').classList.toggle('flipped');
+      down = null;
+      if (e.pointerType !== 'mouse') reset();
+    });
+    scene.addEventListener('pointercancel', () => { down = null; reset(); });
+    scene.addEventListener('pointerleave', () => { down = null; reset(); });
+  })();
 
   let confettiGen = 0;
   function startConfetti() {
