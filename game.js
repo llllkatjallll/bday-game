@@ -10,9 +10,9 @@
   //  win      = Zeitfenster (±s) für PERFECT / GREAT / GOOD
   // ============================================================
   const DIFFS = {
-    easy:   { approach: 1.15, win: [0.08, 0.15, 0.22],  eighths: 0,    doubles: 0.08 },
-    normal: { approach: 0.9,  win: [0.055, 0.11, 0.17], eighths: 0.35, doubles: 0.18 },
-    hard:   { approach: 0.72, win: [0.045, 0.09, 0.14], eighths: 0.75, doubles: 0.28 },
+    easy:   { approach: 1.15, win: [0.08, 0.15, 0.22],  eighths: 0,    doubles: 0.08, minGap: 0.5 },
+    normal: { approach: 0.9,  win: [0.055, 0.11, 0.17], eighths: 0.35, doubles: 0.18, minGap: 0.32 },
+    hard:   { approach: 0.72, win: [0.045, 0.09, 0.14], eighths: 0.75, doubles: 0.28, minGap: 0.22 },
   };
   const VALUE = { perfect: 1, great: 0.7, good: 0.4, miss: 0 };
   const LABEL = { perfect: 'PERFECT', great: 'GREAT', good: 'GOOD', miss: 'MISS' };
@@ -47,14 +47,12 @@
   }
 
   // ---------- Notenmuster passend zur Musik erzeugen ----------
-  function buildChart(D, seed) {
-    const rnd = mulberry32(seed);
-    const notes = [];
+  // Verteilt Noten auf freie Felder (ein Feld ist erst wieder frei, wenn die alte Note durch ist)
+  function makePlacer(D, rnd, notes) {
     const last = new Array(16).fill(-99);
-    const gap = D.approach + D.win[2] + 0.08; // ein Feld ist erst wieder frei, wenn die alte Note durch ist
+    const gap = D.approach + D.win[2] + 0.08;
     let prev = [];
-
-    const place = (t, count) => {
+    return (t, count) => {
       const cand = [];
       for (let c = 0; c < 16; c++) if (t - last[c] >= gap && !prev.includes(c)) cand.push(c);
       for (let i = cand.length - 1; i > 0; i--) {
@@ -65,6 +63,12 @@
       pick.forEach((c) => { last[c] = t; notes.push({ t, cell: c, judged: false }); });
       if (pick.length) prev = pick;
     };
+  }
+
+  function buildChart(D, seed) {
+    const rnd = mulberry32(seed);
+    const notes = [];
+    const place = makePlacer(D, rnd, notes);
 
     for (let bar = 0; bar < TOTAL_BARS; bar++) {
       const sec = BAR_SECTION[bar], idx = BAR_IDX[bar];
@@ -91,7 +95,7 @@
   // ============================================================
   let ctx = null, out = null, noiseBuf = null;
 
-  function initAudio() {
+  function initAudio(resume = true) {
     if (!ctx) {
       // iOS: auch bei Stummschalter Ton abspielen (Safari 16.4+)
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* egal */ }
@@ -105,7 +109,7 @@
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
-    if (ctx.state !== 'running') ctx.resume();
+    if (resume && ctx.state !== 'running') ctx.resume();
   }
 
   function envGain(t, peak, attack, decay) {
@@ -233,8 +237,307 @@
   function stopScheduler() { clearInterval(schedId); schedId = null; }
 
   function hitSound(kind) {
-    if (!ctx) return;
-    tone(ctx.currentTime, kind === 'perfect' ? 1760 : 1320, 0.05, 'sine', 0.08);
+    if (!ctx || C.hitSounds === false) return;
+    tone(ctx.currentTime, kind === 'perfect' ? 1760 : 1320, 0.05, 'sine', SONG ? 0.04 : 0.08);
+  }
+
+  // ============================================================
+  //  Eigener Song (MP3/M4A/OGG/WAV) – Tempo & Beats werden erkannt
+  // ============================================================
+  const params = new URLSearchParams(location.search);
+  const SONG = params.get('song') ? { file: params.get('song') } : (C.song && C.song.file ? C.song : null);
+  let songBuf = null, songInfo = null, songSrc = null, songGain = null;
+
+  async function loadSong() {
+    const btn = $('#btn-start');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Lade Song …';
+    try {
+      initAudio(false);
+      const res = await fetch(SONG.file);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.arrayBuffer();
+      songBuf = await new Promise((ok, fail) => ctx.decodeAudioData(data, ok, fail));
+      songInfo = analyzeSong(songBuf, SONG);
+      const msg = `Song erkannt: ${songInfo.bpm.toFixed(2)} BPM, erster Beat bei ${songInfo.firstBeat.toFixed(3)} s, ` +
+        `Raster-Treffer ${Math.round(songInfo.gridFit * 100)} % → Modus „${songInfo.mode === 'beat' ? 'Beat-Raster' : 'Einsätze'}“`;
+      console.log(msg);
+      if (params.has('debug')) {
+        $('#song-info').textContent = msg;
+        $('#song-info').hidden = false;
+        window.__beatTap = { songBuf, songInfo, analyzeSong, buildSongChart, DIFFS };
+      }
+    } catch (err) {
+      console.error(err);
+      songBuf = null;
+      $('#song-error').textContent = `Song „${SONG.file}“ konnte nicht geladen werden – es läuft die eingebaute Musik.`;
+      $('#song-error').hidden = false;
+    }
+    btn.textContent = label;
+    btn.disabled = false;
+  }
+
+  function makeFFT(N) {
+    const lev = Math.log2(N);
+    const rev = new Uint32Array(N);
+    for (let i = 0; i < N; i++) {
+      let r = 0;
+      for (let b = 0; b < lev; b++) r |= ((i >> b) & 1) << (lev - 1 - b);
+      rev[i] = r;
+    }
+    const cs = new Float32Array(N / 2), sn = new Float32Array(N / 2);
+    for (let i = 0; i < N / 2; i++) { cs[i] = Math.cos((2 * Math.PI * i) / N); sn[i] = -Math.sin((2 * Math.PI * i) / N); }
+    return (re, im) => {
+      for (let i = 0; i < N; i++) {
+        const j = rev[i];
+        if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+      }
+      for (let size = 2; size <= N; size <<= 1) {
+        const half = size >> 1, step = N / size;
+        for (let i = 0; i < N; i += size) {
+          for (let j = 0, k = 0; j < half; j++, k += step) {
+            const a = i + j, l = a + half;
+            const tre = re[l] * cs[k] - im[l] * sn[k];
+            const tim = re[l] * sn[k] + im[l] * cs[k];
+            re[l] = re[a] - tre; im[l] = im[a] - tim;
+            re[a] += tre; im[a] += tim;
+          }
+        }
+      }
+    };
+  }
+
+  function analyzeSong(buf, cfg) {
+    const sr = buf.sampleRate;
+    const start = Math.max(0, cfg.startAt || 0);
+    const dur = Math.max(10, Math.min(cfg.duration || 90, buf.duration - start));
+    const chs = [];
+    for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) chs.push(buf.getChannelData(c));
+
+    // 1) Onset-Kurve per Spectral Flux: wie stark nimmt die Energie in den Frequenzbändern zu?
+    //    Frame f ist um die Zeit f*HOP zentriert.
+    const N = 1024, HOP = 256, fr = sr / HOP;
+    const n0 = Math.floor(start * sr);
+    const nF = Math.floor((dur * sr) / HOP);
+    const fft = makeFFT(N);
+    const win = new Float32Array(N);
+    for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N);
+    const maxBin = Math.min(N / 2, Math.round((10000 * N) / sr));
+    const re = new Float32Array(N), im = new Float32Array(N);
+    let prevMag = new Float32Array(maxBin), mag = new Float32Array(maxBin);
+    const raw = new Float32Array(nF), loud = new Float32Array(nF);
+    for (let f = 0; f < nF; f++) {
+      const base = n0 + f * HOP - N / 2;
+      let e = 0;
+      for (let i = 0; i < N; i++) {
+        let x = 0;
+        const idx = base + i;
+        for (const ch of chs) x += ch[idx] || 0;
+        x /= chs.length;
+        e += x * x;
+        re[i] = x * win[i];
+        im[i] = 0;
+      }
+      fft(re, im);
+      let flux = 0;
+      for (let k = 1; k < maxBin; k++) {
+        const m = Math.log(1 + 100 * Math.sqrt(re[k] * re[k] + im[k] * im[k]));
+        mag[k] = m;
+        const d = m - prevMag[k];
+        if (d > 0) flux += d;
+      }
+      raw[f] = f === 0 ? 0 : flux;
+      loud[f] = Math.log(1 + (1000 * e) / N);
+      const tmp = prevMag; prevMag = mag; mag = tmp;
+    }
+    // lokalen Mittelwert abziehen → nur echte Spitzen bleiben
+    const env = new Float32Array(nF);
+    const W = Math.round(fr * 0.25);
+    let acc = 0;
+    for (let f = 0; f < nF + W; f++) {
+      if (f < nF) acc += raw[f];
+      if (f - 2 * W - 1 >= 0) acc -= raw[f - 2 * W - 1];
+      const c = f - W;
+      if (c >= 0 && c < nF) env[c] = Math.max(0, raw[c] - acc / (2 * W + 1));
+    }
+    const val = (t) => {
+      const x = t * fr, i = Math.floor(x);
+      if (i < 0 || i + 1 >= nF) return 0;
+      const k = x - i;
+      return env[i] * (1 - k) + env[i + 1] * k;
+    };
+    const valMax = (t, w) => Math.max(val(t - w), val(t - w / 2), val(t), val(t + w / 2), val(t + w));
+    const pct = (arr, q) => { const s = [...arr].sort((x, y) => x - y); return s[Math.floor(q * (s.length - 1))] || 1; };
+
+    // 2) Einzelne Einsätze (Peaks) finden – für Musik mit wechselndem Tempo
+    const PW = Math.round(fr * 0.05);
+    const pre = new Float64Array(nF + 1);
+    for (let f = 0; f < nF; f++) pre[f + 1] = pre[f] + env[f];
+    const LW = Math.round(fr * 1.5);
+    const peaks = [];
+    for (let f = 1; f < nF - 1; f++) {
+      const v = env[f];
+      if (v <= 0 || v < env[f - 1] || v <= env[f + 1]) continue;
+      let isMax = true;
+      for (let g = Math.max(0, f - PW); g <= Math.min(nF - 1, f + PW); g++) if (env[g] > v) { isMax = false; break; }
+      if (!isMax) continue;
+      const a = env[f - 1], c = env[f + 1], den = a - 2 * v + c;
+      const off = den < 0 ? (0.5 * (a - c)) / den : 0;
+      const lo = Math.max(0, f - LW), hi = Math.min(nF, f + LW);
+      const local = (pre[hi] - pre[lo]) / (hi - lo) || 1e-6;
+      peaks.push({ t: (f + off) / fr, sg: v, sl: v / local, loud: loud[f] });
+    }
+    const refG = pct(peaks.map((p) => p.sg), 0.9) || 1;
+    const refL = pct(peaks.map((p) => p.sl), 0.9) || 1;
+    const loudMedP = pct(peaks.map((p) => p.loud), 0.5) || 1;
+    peaks.forEach((p) => { p.sg /= refG; p.sl /= refL; p.loud /= loudMedP; });
+
+    // 3) Tempo grob per Autokorrelation (bevorzugt um ~100 BPM, vermeidet Doppelt/Halb-Fehler)
+    let period;
+    if (cfg.bpm) period = 60 / cfg.bpm;
+    else {
+      let best = -1, bestLag = 0;
+      for (let lag = Math.floor((fr * 60) / 180); lag <= Math.ceil((fr * 60) / 60); lag++) {
+        let s = 0;
+        for (let i = 0; i + lag < nF; i++) s += env[i] * env[i + lag];
+        const bpm = (60 * fr) / lag;
+        s = (s / (nF - lag)) * Math.exp(-0.5 * Math.pow(Math.log2(bpm / 100) / 0.9, 2));
+        if (s > best) { best = s; bestLag = lag; }
+      }
+      period = bestLag / fr;
+    }
+
+    // 4) Tempo fein + Phase: das Beat-Raster suchen, das am besten auf die Onsets passt
+    const fit = (p, ph) => { let s = 0, n = 0; for (let t = ph; t < dur; t += p) { s += val(t); n++; } return s / n; };
+    let bestP = period, bestPh = 0, bestS = -1;
+    const range = cfg.bpm ? 0 : 0.03 * period;
+    const pStep = range ? range / 150 : 1;
+    const fixedPh = cfg.firstBeat != null ? ((((cfg.firstBeat - start) % period) + period) % period) : null;
+    for (let p = period - range; p <= period + range + 1e-9; p += pStep) {
+      if (fixedPh != null) { const s = fit(p, fixedPh); if (s > bestS) { bestS = s; bestP = p; bestPh = fixedPh; } continue; }
+      for (let ph = 0; ph < p; ph += 0.004) {
+        const s = fit(p, ph);
+        if (s > bestS) { bestS = s; bestP = p; bestPh = ph; }
+      }
+    }
+    if (fixedPh == null) {
+      const c = bestPh;
+      for (let ph = c - 0.004; ph <= c + 0.004; ph += 0.0005) {
+        const s = fit(bestP, ph);
+        if (s > bestS && ph >= 0) { bestS = s; bestPh = ph; }
+      }
+    }
+
+    // 5) Passt ein festes Raster überhaupt? Anteil der starken Einsätze, die auf dem 8tel-Raster liegen
+    const half = bestP / 2;
+    let hit = 0, tot = 0;
+    peaks.forEach((p) => {
+      if (p.sg < 0.3) return;
+      const d = (((p.t - bestPh) % half) + half) % half;
+      tot += p.sg;
+      if (Math.min(d, half - d) < 0.035) hit += p.sg;
+    });
+    const gridFit = tot ? hit / tot : 0;
+    const chance = Math.min(1, 0.07 / half); // so viel Treffer gäbe es rein zufällig
+    const mode = cfg.mode === 'beat' || cfg.mode === 'onset' ? cfg.mode : gridFit >= 1.8 * chance ? 'beat' : 'onset';
+
+    // 6) Beats mit Stärke, Lautstärke und (geswingtem) Offbeat
+    const beats = [];
+    for (let t = bestPh; t < dur; t += bestP) {
+      let ot = t + bestP / 2, os = 0;
+      for (let x = t + 0.35 * bestP; x <= t + 0.75 * bestP; x += 0.005) {
+        const v = val(x);
+        if (v > os) { os = v; ot = x; }
+      }
+      const fi = Math.min(nF - 1, Math.max(0, Math.round(t * fr)));
+      beats.push({ t, s: valMax(t, 0.03), loud: loud[fi], off: { t: ot, s: os } });
+    }
+    const ref = pct(beats.map((b) => b.s), 0.85) || 1;
+    const loudMed = pct(beats.map((b) => b.loud), 0.5) || 1;
+    beats.forEach((b) => { b.s /= ref; b.off.s /= ref; b.loud /= loudMed; });
+
+    return {
+      period: bestP, bpm: 60 / bestP, firstBeat: start + bestPh, dur, beats, peaks, gridFit, mode,
+      cdBeat: Math.min(0.75, Math.max(0.45, bestP)), // Takt für den 3-2-1-Countdown
+    };
+  }
+
+  function buildSongChart(D, info, seed) {
+    return info.mode === 'onset' ? buildOnsetChart(D, info, seed) : buildBeatChart(D, info, seed);
+  }
+
+  // Noten direkt auf hörbare Einsätze – folgt auch Tempowechseln (Klassik, Rubato …)
+  function buildOnsetChart(D, info, seed) {
+    const rnd = mulberry32(seed);
+    const notes = [];
+    const place = makePlacer(D, rnd, notes);
+    const firstT = 4 * info.cdBeat + 0.6;
+    const lastT = info.dur - 3.5;
+    const cands = info.peaks
+      .filter((p) => p.t >= firstT && p.t <= lastT && p.loud > 0.3 && (p.sg >= 0.12 || p.sl >= 0.5))
+      .map((p) => ({ t: p.t, score: 0.5 * Math.min(p.sg, 2) + 0.5 * Math.min(p.sl, 2) }))
+      .sort((a, b) => b.score - a.score);
+    const picked = [];
+    for (const c of cands) if (picked.every((a) => Math.abs(a.t - c.t) >= D.minGap)) picked.push(c);
+    picked.sort((a, b) => a.t - b.t);
+    picked.forEach((c, i) => {
+      const last = i === picked.length - 1;
+      place(c.t, last || rnd() < D.doubles * (c.score > 1.1 ? 1.5 : 0.3) ? 2 : 1);
+    });
+    return notes;
+  }
+
+  function buildBeatChart(D, info, seed) {
+    const rnd = mulberry32(seed);
+    const notes = [];
+    const place = makePlacer(D, rnd, notes);
+    const p = info.period;
+    const fast = p < 0.42; // bei schnellen Songs nur jeden 2. Beat als Hauptnote (außer „Schwer“)
+    const firstT = 4 * info.cdBeat + 0.6;
+    const lastT = info.dur - 3.5;
+    let k = 0, lastBeat = null;
+    for (const b of info.beats) {
+      const i = k++;
+      if (b.t < firstT) continue;
+      if (b.t > lastT) { if (!lastBeat) lastBeat = b; continue; }
+      if (b.loud < 0.35) continue; // leise Stelle → Pause
+      const main = !fast || D === DIFFS.hard || i % 2 === 0;
+      if (main) {
+        if (rnd() < (b.s < 0.15 ? 0.35 : 1)) place(b.t, rnd() < D.doubles * (0.4 + 0.6 * Math.min(1, b.s)) ? 2 : 1);
+        const o = b.off;
+        if (D.eighths && p / 2 >= 0.24 && rnd() < D.eighths * Math.min(1, o.s)) place(o.t, 1);
+      } else if (D.eighths && rnd() < D.eighths * Math.min(1, b.s)) {
+        place(b.t, 1);
+      }
+    }
+    if (lastBeat) place(lastBeat.t, 2); // Schluss: zwei Felder
+    return notes;
+  }
+
+  function playSong(t0) {
+    stopSong();
+    const st = SONG.startAt || 0, dur = songInfo.dur;
+    const v = SONG.volume != null ? SONG.volume : 1;
+    songSrc = ctx.createBufferSource();
+    songSrc.buffer = songBuf;
+    songGain = ctx.createGain();
+    songGain.gain.setValueAtTime(st > 0 ? 0.0001 : v, t0);
+    if (st > 0) songGain.gain.exponentialRampToValueAtTime(v, t0 + 0.6);
+    songGain.gain.setValueAtTime(v, t0 + dur - 3);
+    songGain.gain.linearRampToValueAtTime(0, t0 + dur);
+    songSrc.connect(songGain);
+    songGain.connect(ctx.destination);
+    songSrc.start(t0, st, dur);
+  }
+  function stopSong() {
+    if (!songSrc) return;
+    const t = ctx.currentTime;
+    songGain.gain.cancelScheduledValues(t);
+    songGain.gain.setValueAtTime(songGain.gain.value, t);
+    songGain.gain.linearRampToValueAtTime(0, t + 0.8);
+    songSrc.stop(t + 0.85);
+    songSrc = null;
   }
 
   // ============================================================
@@ -257,6 +560,10 @@
   document.querySelectorAll('#diff button').forEach((b) =>
     b.addEventListener('click', () => { diffKey = b.dataset.diff; updateDiffUI(); }));
   updateDiffUI();
+  if (SONG) {
+    if (SONG.title) { $('#song-title').textContent = '🎵 ' + SONG.title; $('#song-title').hidden = false; }
+    loadSong();
+  }
 
   // ============================================================
   //  Spielfeld
@@ -276,14 +583,19 @@
   }
 
   let D, notes, queues, running = false, paused = false, endT = 0, latency = 0;
-  let counts, combo, maxCombo, points, lastCd = null;
+  let counts, combo, maxCombo, points, lastCd = null, firstNoteT = 0, beatLen = 1;
 
   const songTime = () => ctx.currentTime - startTime - latency;
 
   function startGame() {
     initAudio();
     D = DIFFS[diffKey];
-    notes = buildChart(D, (C.seed || 1) * 7 + diffKey.length);
+    const seed = (C.seed || 1) * 7 + diffKey.length;
+    notes = SONG && songBuf ? buildSongChart(D, songInfo, seed) : [];
+    const useSong = notes.length > 0;
+    if (!useSong) notes = buildChart(D, seed);
+    firstNoteT = useSong ? notes[0].t : 16 * STEP;
+    beatLen = useSong ? songInfo.cdBeat : 4 * STEP;
     queues = Array.from({ length: 16 }, () => ({ list: [], i: 0 }));
     notes.forEach((n) => queues[n.cell].list.push(n));
     counts = { perfect: 0, great: 0, good: 0, miss: 0 };
@@ -302,7 +614,8 @@
     show('game');
 
     startTime = ctx.currentTime + 0.4;
-    startScheduler();
+    if (useSong) playSong(startTime);
+    else startScheduler();
     running = true;
     paused = false;
     requestAnimationFrame(frame);
@@ -330,7 +643,8 @@
 
     // Countdown 3-2-1-Los im ersten Takt
     let txt = '';
-    if (now >= 0 && now < 16 * STEP) txt = ['3', '2', '1', 'Los!'][Math.floor(now / (4 * STEP))];
+    const cdStart = firstNoteT - 4 * beatLen;
+    if (now >= cdStart && now < firstNoteT) txt = ['3', '2', '1', 'Los!'][Math.floor((now - cdStart) / beatLen)];
     if (txt !== lastCd) {
       const cd = $('#countdown');
       cd.textContent = txt;
@@ -415,6 +729,7 @@
   function finish() {
     running = false;
     stopScheduler();
+    stopSong();
     const score = currentScore();
     const pass = score >= passFor(diffKey);
     if (!pass) fails++;

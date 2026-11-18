@@ -72,6 +72,9 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
 .howto b { color: var(--text); }
 .goal b { color: var(--orange); }
 .hint { color: var(--muted); font-size: 0.9rem; }
+.hint.error { color: var(--red); }
+.song-title { font-weight: 700; color: var(--cyan); }
+.btn:disabled { opacity: 0.6; cursor: wait; }
 
 /* kleine Animation, die zeigt, wann man tippen muss */
 .demo-cell {
