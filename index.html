@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0b1e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Beat Tap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Startbildschirm -->
+  <section id="start" class="screen active">
+    <div class="panel">
+      <div class="logo">BEAT<span>TAP</span></div>
+      <p class="for">Ein kleines Spiel für <b id="recipient"></b></p>
+      <div class="demo" aria-hidden="true">
+        <div class="demo-cell"><div class="demo-marker"></div></div>
+      </div>
+      <p class="howto">
+        Tippe auf ein Feld, <b>genau dann</b>, wenn die Markierung es ganz ausfüllt.
+        Manchmal leuchten zwei Felder gleichzeitig – dann brauchst du zwei Finger!
+      </p>
+      <p class="goal">Ziel: mindestens <b id="goal-score"></b> Punkte</p>
+      <div class="diff" id="diff">
+        <button data-diff="easy">Leicht</button>
+        <button data-diff="normal">Normal</button>
+        <button data-diff="hard">Schwer</button>
+      </div>
+      <button id="btn-start" class="btn primary">Los geht's ▶</button>
+      <p class="hint">🔊 Ton an! Am besten mit Kopfhörern.</p>
+    </div>
+  </section>
+
+  <!-- Spiel -->
+  <section id="game" class="screen">
+    <div class="hud">
+      <div>
+        <small>SCORE</small>
+        <div id="score">0</div>
+      </div>
+      <div class="combo">
+        <small>COMBO</small>
+        <div id="combo">0</div>
+      </div>
+    </div>
+    <div class="progress"><div id="progress-bar"></div></div>
+    <div id="grid"></div>
+    <div id="countdown"></div>
+    <div id="pause" class="overlay" hidden>
+      <div>Pausiert<br><small>Tippen zum Weiterspielen</small></div>
+    </div>
+  </section>
+
+  <!-- Ergebnis -->
+  <section id="result" class="screen">
+    <div class="panel">
+      <h2 id="res-title"></h2>
+      <div class="big-score" id="res-score"></div>
+      <p id="res-msg"></p>
+      <div class="stats">
+        <div><span class="perfect">PERFECT</span><b id="r-perfect"></b></div>
+        <div><span class="great">GREAT</span><b id="r-great"></b></div>
+        <div><span class="good">GOOD</span><b id="r-good"></b></div>
+        <div><span class="miss">MISS</span><b id="r-miss"></b></div>
+        <div><span>MAX COMBO</span><b id="r-combo"></b></div>
+      </div>
+      <button id="btn-reward" class="btn primary">Zur Überraschung 🎁</button>
+      <button id="btn-retry" class="btn primary">Nochmal versuchen</button>
+      <button id="btn-easier" class="btn">Etwas leichter probieren</button>
+      <button id="btn-menu" class="btn ghost">Zum Menü</button>
+    </div>
+  </section>
+
+  <!-- Gewonnen: Gutschein -->
+  <section id="win" class="screen">
+    <div class="panel">
+      <h1 id="win-title"></h1>
+      <p id="win-text"></p>
+      <div class="ticket">
+        <div class="ticket-head" id="v-heading"></div>
+        <div class="ticket-for">für <b id="v-recipient"></b></div>
+        <div class="ticket-title" id="v-title"></div>
+        <div class="ticket-details" id="v-details"></div>
+        <div class="ticket-foot">
+          <span>von <b id="v-from"></b></span>
+          <span id="v-code"></span>
+        </div>
+      </div>
+      <p class="hint">📸 Tipp: Mach einen Screenshot von deinem Gutschein!</p>
+      <button id="btn-again" class="btn ghost">Nochmal spielen</button>
+    </div>
+  </section>
+
+  <canvas id="confetti"></canvas>
+
+  <script src="config.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
