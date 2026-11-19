@@ -20,7 +20,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Chakra Petch", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -517,6 +517,27 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
   .card-float, .card-face::after, .card-shadow { animation: none; }
 }
 
+.fs-btn {
+  position: fixed;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 60;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  opacity: 0.18;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.fs-btn:hover, .fs-btn:focus-visible { opacity: 0.6; }
+.fs-btn svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* im Vollbild zeigen die Ecken nach innen (= verlassen) */
+.fs-btn.on svg path { d: path("M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"); }
+
 #confetti {
   position: fixed;
   inset: 0;
@@ -542,3 +563,26 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
   font-style: normal;
 }
 .logo { letter-spacing: 0; font-size: clamp(2.6rem, 14vw, 4rem); }
+
+/* ---------- Fließtext im Arcade-Stil (Chakra Petch) ---------- */
+.for, .howto, .goal { font-size: 1.05rem; letter-spacing: 0.02em; }
+.for b, .howto b, .goal b, #win-text b {
+  color: var(--cyan);
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(61, 232, 255, 0.55);
+}
+.goal b { color: var(--orange); text-shadow: 0 0 10px rgba(255, 176, 59, 0.55); }
+.hint, #songs-diff {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.btn, .diff button {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.btn { font-size: 1rem; }
+#res-msg, #win-text { font-size: 1.05rem; }
+.stats div, .stats span, .song-text b { letter-spacing: 0.06em; }
+.song-text small { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; }

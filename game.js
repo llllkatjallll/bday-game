@@ -924,6 +924,24 @@
   $('#btn-reward').addEventListener('click', showWin);
   $('#btn-again').addEventListener('click', () => { stopConfetti(); show('start'); });
 
+  // Vollbild (nicht auf jedem Gerät verfügbar, z.B. iPhone-Safari → Knopf bleibt versteckt)
+  const docEl = document.documentElement;
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  if (docEl.requestFullscreen || docEl.webkitRequestFullscreen) {
+    const fsBtn = $('#btn-fs');
+    fsBtn.hidden = false;
+    fsBtn.addEventListener('click', () => {
+      if (fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else {
+        const p = (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl, { navigationUI: 'hide' });
+        if (p && p.catch) p.catch(() => {});
+      }
+    });
+    const sync = () => fsBtn.classList.toggle('on', !!fsElement());
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+  }
+
   // ============================================================
   //  Gewonnen: Gutschein + Konfetti
   // ============================================================
