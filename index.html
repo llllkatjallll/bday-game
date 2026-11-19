@@ -17,26 +17,33 @@
   <!-- Startbildschirm -->
   <section id="start" class="screen active">
     <div class="panel">
-      <div class="logo">BEAT<span>TAP</span></div>
-      <p class="for">Ein kleines Spiel für <b id="recipient"></b></p>
+      <div class="logo">BDAY<span>BEAT</span></div>
+      <p class="for">Ein Spiel für <b id="recipient"></b></p>
       <div class="demo" aria-hidden="true">
-        <div class="demo-cell"><div class="demo-marker"></div></div>
+        <div class="demo-cell"><div class="marker"><div class="half top"></div><div class="half bot"></div></div></div>
       </div>
       <p class="howto">
-        Tippe auf ein Feld, <b>genau dann</b>, wenn die Markierung es ganz ausfüllt.
-        Manchmal leuchten zwei Felder gleichzeitig – dann brauchst du zwei Finger!
+      Vielleicht hast du ja Glück, <br> und es wartet  <b>ein Geschenk</b> auf dich.
       </p>
       <p class="goal">Ziel: mindestens <b id="goal-score"></b> Punkte</p>
-      <p class="song-title" id="song-title" hidden></p>
-      <p class="hint" id="song-info" hidden></p>
-      <p class="hint error" id="song-error" hidden></p>
       <div class="diff" id="diff">
         <button data-diff="easy">Leicht</button>
         <button data-diff="normal">Normal</button>
         <button data-diff="hard">Schwer</button>
       </div>
       <button id="btn-start" class="btn primary">Los geht's ▶</button>
-      <p class="hint">🔊 Ton an! Am besten mit Kopfhörern.</p>
+    </div>
+  </section>
+
+  <!-- Liedauswahl -->
+  <section id="songs" class="screen">
+    <div class="panel">
+      <h2 class="songs-head">Wähle ein Lied</h2>
+      <p class="hint" id="songs-diff"></p>
+      <div class="song-list" id="song-list"></div>
+      <p class="hint" id="song-info" hidden></p>
+      <p class="hint error" id="song-error" hidden></p>
+      <button id="btn-songs-back" class="btn ghost">← Zurück</button>
     </div>
   </section>
 
@@ -76,6 +83,7 @@
       <button id="btn-reward" class="btn primary">Zur Überraschung 🎁</button>
       <button id="btn-retry" class="btn primary">Nochmal versuchen</button>
       <button id="btn-easier" class="btn">Etwas leichter probieren</button>
+      <button id="btn-other-song" class="btn">Anderes Lied</button>
       <button id="btn-menu" class="btn ghost">Zum Menü</button>
     </div>
   </section>
@@ -112,7 +120,6 @@
         <div class="card-shadow"></div>
       </div>
       <p class="hint">👆 Tippe auf die Karte, um sie umzudrehen</p>
-      <p class="hint">📸 Tipp: Mach einen Screenshot von deinem Gutschein!</p>
       <button id="btn-again" class="btn ghost">Nochmal spielen</button>
     </div>
   </section>

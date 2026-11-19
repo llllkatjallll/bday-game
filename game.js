@@ -15,7 +15,7 @@
     hard:   { approach: 0.72, win: [0.045, 0.09, 0.14], eighths: 0.75, doubles: 0.28, minGap: 0.22 },
   };
   const VALUE = { perfect: 1, great: 0.7, good: 0.4, miss: 0 };
-  const LABEL = { perfect: 'PERFECT', great: 'GREAT', good: 'GOOD', miss: 'MISS' };
+  const LABEL = { perfect: 'PERFECT', great: 'GREAT, BIBER', good: 'GOOD', miss: 'MISS' };
 
   // ============================================================
   //  Song-Aufbau (alles wird live per Web Audio synthetisiert)
@@ -266,44 +266,45 @@
 
   function hitSound(kind) {
     if (!ctx || C.hitSounds === false) return;
-    tone(ctx.currentTime, kind === 'perfect' ? 1760 : 1320, 0.05, 'sine', SONG ? 0.04 : 0.08);
+    tone(ctx.currentTime, kind === 'perfect' ? 1760 : 1320, 0.05, 'sine', songBuf ? 0.04 : 0.08);
   }
 
   // ============================================================
   //  Eigener Song (MP3/M4A/OGG/WAV) – Tempo & Beats werden erkannt
   // ============================================================
   const params = new URLSearchParams(location.search);
-  const SONG = params.get('song') ? { file: params.get('song') } : (C.song && C.song.file ? C.song : null);
-  let songBuf = null, songInfo = null, songSrc = null, songGain = null;
+  // Liste aus config.js (songs: [...]); ?song=datei.mp3 überschreibt sie zum Testen.
+  // Ältere Configs mit nur "song: {...}" funktionieren weiterhin.
+  const SONGS = params.get('song') ? [{ file: params.get('song') }]
+    : Array.isArray(C.songs) && C.songs.length ? C.songs.slice()
+    : C.song && C.song.file ? [C.song] : [];
+  if (!SONGS.length) SONGS.push({ file: '', title: 'Eingebauter Beat' });
 
-  async function loadSong() {
-    const btn = $('#btn-start');
-    const label = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Lade Song …';
-    try {
-      initAudio(false);
-      const res = await fetch(SONG.file);
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const data = await res.arrayBuffer();
-      songBuf = await new Promise((ok, fail) => ctx.decodeAudioData(data, ok, fail));
-      songInfo = analyzeSong(songBuf, SONG);
-      const msg = `Song erkannt: ${songInfo.bpm.toFixed(2)} BPM, erster Beat bei ${songInfo.firstBeat.toFixed(3)} s, ` +
-        `Raster-Treffer ${Math.round(songInfo.gridFit * 100)} % → Modus „${songInfo.mode === 'beat' ? 'Beat-Raster' : 'Einsätze'}“`;
-      console.log(msg);
-      if (params.has('debug')) {
-        $('#song-info').textContent = msg;
-        $('#song-info').hidden = false;
-        window.__beatTap = { songBuf, songInfo, analyzeSong, buildSongChart, DIFFS };
-      }
-    } catch (err) {
-      console.error(err);
-      songBuf = null;
-      $('#song-error').textContent = `Song „${SONG.file}“ konnte nicht geladen werden – es läuft die eingebaute Musik.`;
-      $('#song-error').hidden = false;
+  let SONG = null, songBuf = null, songInfo = null, songSrc = null, songGain = null;
+  const songCache = new Map(); // Lied → { buf, info } (Laden + Analyse nur einmal)
+
+  const songName = (s) => s.title ||
+    (s.file ? decodeURIComponent(s.file.split('/').pop().replace(/\.[^.]+$/, '')).replace(/[_-]+/g, ' ') : 'Eingebauter Beat');
+
+  async function loadSong(s) {
+    if (songCache.has(s)) return songCache.get(s);
+    initAudio(false);
+    const res = await fetch(s.file);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.arrayBuffer();
+    const buf = await new Promise((ok, fail) => ctx.decodeAudioData(data, ok, fail));
+    const info = analyzeSong(buf, s);
+    const msg = `„${songName(s)}“: ${info.bpm.toFixed(2)} BPM, erster Beat bei ${info.firstBeat.toFixed(3)} s, ` +
+      `Raster-Treffer ${Math.round(info.gridFit * 100)} % → Modus „${info.mode === 'beat' ? 'Beat-Raster' : 'Einsätze'}“`;
+    console.log(msg);
+    if (params.has('debug')) {
+      $('#song-info').textContent = msg;
+      $('#song-info').hidden = false;
+      window.__beatTap = { songBuf: buf, songInfo: info, analyzeSong, buildSongChart, DIFFS };
     }
-    btn.textContent = label;
-    btn.disabled = false;
+    const entry = { buf, info };
+    songCache.set(s, entry);
+    return entry;
   }
 
   function makeFFT(N) {
@@ -552,9 +553,12 @@
     return notes;
   }
 
+  // erste Note frühestens nach so vielen Sekunden Musik (Countdown läuft vorher in Stille)
+  const LEAD_IN = 1.0;
+
   // Noten direkt auf hörbare Einsätze – folgt auch Tempowechseln (Klassik, Rubato …)
   function onsetEvents(D, info) {
-    const firstT = 4 * info.cdBeat + 0.6;
+    const firstT = LEAD_IN;
     const lastT = info.dur - 3.5;
     const cands = info.peaks
       .filter((p) => p.t >= firstT && p.t <= lastT && p.loud > 0.3 && (p.sg >= 0.12 || p.sl >= 0.5))
@@ -575,7 +579,7 @@
     const ev = [];
     const p = info.period;
     const fast = p < 0.42; // bei schnellen Songs nur jeden 2. Beat als Hauptnote (außer „Schwer“)
-    const firstT = 4 * info.cdBeat + 0.6;
+    const firstT = LEAD_IN;
     const lastT = info.dur - 3.5;
     let k = 0, lastBeat = null;
     for (const b of info.beats) {
@@ -642,9 +646,75 @@
   document.querySelectorAll('#diff button').forEach((b) =>
     b.addEventListener('click', () => { diffKey = b.dataset.diff; updateDiffUI(); }));
   updateDiffUI();
-  if (SONG) {
-    if (SONG.title) { $('#song-title').textContent = '🎵 ' + SONG.title; $('#song-title').hidden = false; }
-    loadSong();
+
+  // glänzende Farbpaare: [obere Hälfte, untere Hälfte]
+  const NOTE_COLORS = [
+    ['#7dffb0', '#16b86a'], // grün
+    ['#ffd166', '#ff7a1a'], // orange
+    ['#ff7ab8', '#e0186f'], // pink
+    ['#7ee8ff', '#1f8fff'], // blau
+    ['#c79bff', '#7a35ff'], // lila
+    ['#fff27a', '#e6b800'], // gelb
+  ];
+  // ============================================================
+  //  Liedauswahl
+  // ============================================================
+  const DIFF_LABEL = { easy: 'Leicht', normal: 'Normal', hard: 'Schwer' };
+  const SONG_ICONS = ['♪', '♫', '♬', '♩'];
+  const songBtns = SONGS.map((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'song';
+    const [c1, c2] = NOTE_COLORS[(i + 1) % NOTE_COLORS.length];
+    b.style.setProperty('--c1', c1);
+    b.style.setProperty('--c2', c2);
+    b.innerHTML = '<span class="song-icon"></span><span class="song-text"><b></b><small></small></span><span class="song-status"></span>';
+    b.querySelector('.song-icon').textContent = SONG_ICONS[i % SONG_ICONS.length];
+    b.querySelector('b').textContent = songName(s);
+    const sub = [s.artist, s.file ? '' : 'eingebaute Musik'].filter(Boolean).join(' · ');
+    b.querySelector('small').textContent = sub;
+    b.querySelector('small').hidden = !sub;
+    b.addEventListener('click', () => pickSong(s, b));
+    $('#song-list').appendChild(b);
+    return b;
+  });
+
+  function showSongs() {
+    $('#songs-diff').textContent = `Schwierigkeit: ${DIFF_LABEL[diffKey]} · Ziel ${fmt(passFor(diffKey))} Punkte`;
+    show('songs');
+  }
+
+  let picking = false;
+  async function pickSong(s, btn) {
+    if (picking) return;
+    initAudio(); // im Klick: Audio freischalten (iOS)
+    $('#song-error').hidden = true;
+    if (s.file && !songCache.has(s)) {
+      picking = true;
+      songBtns.forEach((b) => { b.disabled = true; });
+      btn.classList.remove('failed');
+      btn.classList.add('loading');
+      btn.querySelector('.song-status').textContent = 'lädt …';
+      try {
+        await loadSong(s);
+        btn.querySelector('.song-status').textContent = '';
+      } catch (err) {
+        console.error(err);
+        btn.classList.add('failed');
+        btn.querySelector('.song-status').textContent = 'Fehler';
+        $('#song-error').textContent = `„${s.file}“ konnte nicht geladen werden.`;
+        $('#song-error').hidden = false;
+        return;
+      } finally {
+        picking = false;
+        btn.classList.remove('loading');
+        songBtns.forEach((b) => { b.disabled = false; });
+      }
+    }
+    SONG = s;
+    const entry = s.file ? songCache.get(s) : null;
+    songBuf = entry ? entry.buf : null;
+    songInfo = entry ? entry.info : null;
+    startGame();
   }
 
   // ============================================================
@@ -655,7 +725,7 @@
   for (let i = 0; i < 16; i++) {
     const el = document.createElement('div');
     el.className = 'cell';
-    el.innerHTML = '<div class="target"></div><div class="marker"></div><div class="judge"></div>';
+    el.innerHTML = '<div class="target"></div><div class="marker"><div class="half top"></div><div class="half bot"></div></div><div class="judge"></div>';
     gridEl.appendChild(el);
     cells.push({ el, marker: el.querySelector('.marker'), judge: el.querySelector('.judge'), shown: false });
     // Pointer Events: jeder Finger löst sein eigenes pointerdown aus → Multitouch
@@ -665,7 +735,7 @@
   }
 
   let D, notes, queues, running = false, paused = false, endT = 0, latency = 0;
-  let counts, combo, maxCombo, points, lastCd = null, firstNoteT = 0, beatLen = 1;
+  let counts, combo, maxCombo, points, lastCd = null, beatLen = 1;
 
   const songTime = () => ctx.currentTime - startTime - latency;
 
@@ -676,8 +746,7 @@
     notes = SONG && songBuf ? buildSongChart(D, songInfo, seed) : [];
     const useSong = notes.length > 0;
     if (!useSong) notes = buildChart(D, seed);
-    firstNoteT = useSong ? notes[0].t : 16 * STEP;
-    beatLen = useSong ? songInfo.cdBeat : 4 * STEP;
+    beatLen = Math.min(0.75, Math.max(0.5, useSong ? songInfo.cdBeat : 4 * STEP));
     queues = Array.from({ length: 16 }, () => ({ list: [], i: 0 }));
     notes.forEach((n) => queues[n.cell].list.push(n));
     counts = { perfect: 0, great: 0, good: 0, miss: 0 };
@@ -695,7 +764,10 @@
     $('#pause').hidden = true;
     show('game');
 
-    startTime = ctx.currentTime + 0.4;
+    // 3-2-1 läuft vor dem Start (Zeit 0 = Musikbeginn), mit leisen Klicks
+    startTime = ctx.currentTime + 0.4 + 3 * beatLen;
+    for (let k = 3; k >= 1; k--) tone(startTime - k * beatLen, 880, 0.06, 'sine', 0.08);
+    tone(startTime, 1320, 0.09, 'sine', 0.08);
     if (useSong) playSong(startTime);
     else startScheduler();
     running = true;
@@ -714,7 +786,8 @@
       if (n && now > n.t + W) { judge(c, n, 'miss'); n = q.list[q.i]; }
       if (n && now >= n.t - A) {
         const p = (now - (n.t - A)) / A;
-        cell.marker.style.transform = `scale(${0.15 + 0.85 * Math.min(p, 1)})`;
+        if (cell.note !== n) setNoteColor(cell, n);
+        cell.marker.style.setProperty('--p', Math.min(p, 1).toFixed(4));
         cell.marker.style.opacity = p > 1 ? String(Math.max(0.2, 1 - ((p - 1) * A) / W)) : String(Math.min(1, 0.35 + p));
         cell.marker.classList.toggle('ready', p > 0.88);
         if (!cell.shown) { cell.shown = true; cell.el.classList.add('active'); }
@@ -725,8 +798,7 @@
 
     // Countdown 3-2-1-Los im ersten Takt
     let txt = '';
-    const cdStart = firstNoteT - 4 * beatLen;
-    if (now >= cdStart && now < firstNoteT) txt = ['3', '2', '1', 'Los!'][Math.floor((now - cdStart) / beatLen)];
+    if (now >= -3 * beatLen && now < beatLen) txt = ['3', '2', '1', 'Los!'][Math.floor(now / beatLen) + 3];
     if (txt !== lastCd) {
       const cd = $('#countdown');
       cd.textContent = txt;
@@ -739,6 +811,14 @@
 
     if (now > endT) { finish(); return; }
     requestAnimationFrame(frame);
+  }
+
+  function setNoteColor(cell, n) {
+    cell.note = n;
+    if (n.color == null) n.color = Math.floor(Math.random() * NOTE_COLORS.length);
+    const [c1, c2] = NOTE_COLORS[n.color];
+    cell.marker.style.setProperty('--c1', c1);
+    cell.marker.style.setProperty('--c2', c2);
   }
 
   function hideMarker(cell) {
@@ -831,7 +911,9 @@
     show('result');
   }
 
-  $('#btn-start').addEventListener('click', startGame);
+  $('#btn-start').addEventListener('click', () => { initAudio(); showSongs(); });
+  $('#btn-songs-back').addEventListener('click', () => show('start'));
+  $('#btn-other-song').addEventListener('click', showSongs);
   $('#btn-retry').addEventListener('click', startGame);
   $('#btn-easier').addEventListener('click', () => {
     diffKey = diffKey === 'hard' ? 'normal' : 'easy';

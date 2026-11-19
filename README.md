@@ -20,14 +20,21 @@ Alles Persönliche steht in [`config.js`](config.js):
 
 **Vorschau des Gutscheins** ohne zu spielen: `index.html?win` aufrufen.
 
-## Eigenen Song verwenden
+## Lieder hinzufügen
+
+Nach „Los geht's“ kommt ein Auswahl-Bildschirm mit allen Liedern aus `config.js`.
 
 1. Audiodatei (MP3, M4A, OGG oder WAV) in den Ordner `music/` legen.
-2. In `config.js` unter `song` eintragen:
+2. In `config.js` unter `songs` eine Zeile ergänzen (die Reihenfolge dort = Reihenfolge im Spiel):
    ```js
-   song: { file: "music/mein-lied.mp3", title: "Mein Lied", startAt: 0, duration: 90 },
+   songs: [
+     { file: "music/hungarian_dance.mp3", title: "Hungarian Dance", artist: "Johannes Brahms", duration: 90 },
+     { file: "music/mein-lied.mp3", title: "Mein Lied", artist: "Band", startAt: 0, duration: 90 },
+   ],
    ```
-3. Fertig – die Musik wird beim Laden analysiert und die Noten passend gesetzt. Dafür gibt es
+   Der Ordner wird nicht automatisch durchsucht – nur eingetragene Dateien erscheinen.
+   Ein Eintrag mit `file: ""` bietet die eingebaute Musik an.
+3. Fertig – das Lied wird beim Antippen geladen und analysiert und die Noten passend gesetzt. Dafür gibt es
    zwei Modi, die automatisch gewählt werden:
    - **Beat-Raster** für Lieder mit gleichmäßigem Takt (Lofi, Pop, Elektro): Noten auf den
      Schlägen, inkl. geswingter Offbeats.

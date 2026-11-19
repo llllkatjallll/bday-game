@@ -86,18 +86,14 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
   background: var(--cell);
   border: 2px solid var(--line);
 }
-.demo-marker {
-  position: absolute;
-  inset: 6%;
-  border-radius: 18%;
-  background: radial-gradient(circle, var(--orange), var(--pink) 70%);
-  animation: demo 1.6s ease-in infinite;
-}
+.demo-cell { overflow: hidden; }
+.demo-cell .marker { animation: demo 1.6s linear infinite; }
+@property --p { syntax: "<number>"; inherits: true; initial-value: 0; }
 @keyframes demo {
-  0% { transform: scale(0.15); opacity: 0.35; }
-  55% { transform: scale(1); opacity: 1; box-shadow: 0 0 22px var(--orange); }
-  62% { transform: scale(1.08); opacity: 0; }
-  100% { transform: scale(1.08); opacity: 0; }
+  0% { --p: 0; opacity: 0.4; }
+  20% { opacity: 1; }
+  55% { --p: 1; opacity: 1; box-shadow: 0 0 22px var(--c1); }
+  63%, 100% { --p: 1; opacity: 0; }
 }
 
 /* ---------- Buttons ---------- */
@@ -142,6 +138,55 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
 }
 .diff button.sel { background: var(--line); color: var(--text); }
 
+/* ---------- Liedauswahl ---------- */
+.songs-head { font-size: 1.6rem; }
+.song-list { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.song {
+  --c1: #ffb03b;
+  --c2: #ff3d8b;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 16px 12px 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+    linear-gradient(180deg, #241d52 0%, var(--cell) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 4px 10px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.15s;
+}
+.song:hover { border-color: var(--c1); }
+.song:active { transform: scale(0.98); }
+.song:disabled { cursor: wait; }
+.song-icon {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.1) 45%, transparent 46%),
+    linear-gradient(180deg, var(--c1), var(--c2));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3), 0 0 14px color-mix(in srgb, var(--c1) 40%, transparent);
+}
+.song-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.song-text b { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-text small { color: var(--muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-status { flex: none; font-size: 0.8rem; color: var(--muted); }
+.song.loading .song-status { color: var(--cyan); animation: blink 0.8s ease-in-out infinite alternate; }
+.song.failed { border-color: var(--red); }
+.song.failed .song-status { color: var(--red); }
+@keyframes blink { from { opacity: 1; } to { opacity: 0.35; } }
+
 /* ---------- Spiel ---------- */
 #game {
   --size: min(94vw, calc(100vh - 140px), 640px);
@@ -179,14 +224,26 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
 }
 .cell {
   position: relative;
-  background: var(--cell);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.03) 45%, transparent 46%),
+    linear-gradient(180deg, #241d52 0%, var(--cell) 60%, #120f2e 100%);
   border: 2px solid var(--line);
   border-radius: 14%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -6px 12px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   touch-action: none;
 }
 .cell > * { pointer-events: none; }
-.cell.pressed { background: #2a2363; border-color: #5a4fa8; }
+.cell.pressed { background: linear-gradient(180deg, #3a3080 0%, #2a2363 100%); border-color: #5a4fa8; }
+/* Glasscheibe über allem: diagonaler Lichtreflex */
+.cell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 35%, transparent 36%);
+}
 
 .target {
   position: absolute;
@@ -196,16 +253,54 @@ body { background: radial-gradient(ellipse at 50% -10%, #2c1f60 0%, var(--bg) 65
 }
 .cell.active .target { border-color: rgba(255, 255, 255, 0.35); }
 
+/* Marker: zwei Hälften schieben sich von oben und unten zusammen.
+   --p (0…1) = Fortschritt bis zum Treffzeitpunkt, --c1/--c2 = Farbe der Note */
 .marker {
+  --p: 0;
+  --c1: #ffb03b;
+  --c2: #ff3d8b;
   position: absolute;
   inset: 6%;
   border-radius: 18%;
-  background: radial-gradient(circle, var(--orange), var(--pink) 70%);
+  overflow: hidden;
   opacity: 0;
-  transform: scale(0.15);
-  will-change: transform, opacity;
+  will-change: opacity;
 }
-.marker.ready { box-shadow: 0 0 24px var(--orange); }
+.marker .half {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+/* oben: hell, untere Kante als nach oben zeigender Pfeil-Einschnitt */
+.marker .top {
+  clip-path: polygon(0 0, 100% 0, 100% 52%, 50% 30%, 0 52%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.15) 22%, transparent 23%),
+    linear-gradient(180deg, color-mix(in srgb, var(--c1) 55%, #fff) 0%, var(--c1) 55%);
+  transform: translateY(calc((1 - var(--p)) * -54%));
+}
+/* unten: dunkler, Spitze passt genau in den Einschnitt oben */
+.marker .bot {
+  clip-path: polygon(0 52%, 50% 30%, 100% 52%, 100% 100%, 0 100%);
+  background:
+    linear-gradient(180deg, transparent 36%, rgba(255, 255, 255, 0.35) 52%, transparent 62%),
+    linear-gradient(180deg, var(--c2) 30%, color-mix(in srgb, var(--c2) 55%, #000) 100%);
+  transform: translateY(calc((1 - var(--p)) * 72%));
+}
+/* Glanz über dem Ganzen: Spiegelung oben + Rand-Licht */
+.marker::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.25),
+    inset 0 -10px 18px rgba(0, 0, 0, 0.25);
+}
+.cell.active .marker { box-shadow: 0 0 10px color-mix(in srgb, var(--c1) 30%, transparent); }
+.marker.ready { box-shadow: 0 0 26px var(--c1), 0 0 6px #fff !important; }
+.marker.ready::after { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7), inset 0 -10px 18px rgba(0, 0, 0, 0.2); }
 
 .judge {
   position: absolute;

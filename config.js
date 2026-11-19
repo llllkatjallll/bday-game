@@ -3,7 +3,7 @@
 // ============================================================
 window.GAME_CONFIG = {
   // Name der beschenkten Person
-  recipientName: "Geburtstagskind",
+  recipientName: "Malte",
 
   // Von wem ist das Geschenk?
   fromName: "Katja",
@@ -11,15 +11,15 @@ window.GAME_CONFIG = {
   // Text auf dem Gewinn-Bildschirm
   winTitle: "Herzlichen Glückwunsch zum Geburtstag!",
   winText:
-    "Du hast nicht nur den Beat getroffen, sondern dir auch dein Geschenk erspielt. " +
+    "Das war fast genauso beeindruckend wie ein Pistaccio-Eclaire! " +
     "Alles Liebe zum Geburtstag! 🎂",
 
   // Der Gutschein
   voucher: {
     heading: "GUTSCHEIN",
     title: "Ein Arcade-Spiele-Tag",
-    details: "Inklusive Spielguthaben, Snacks und jeder Menge Highscores. Termin suchst du dir aus! 🕹️",
-    code: "ARCADE-2026",
+    details: "In Berlin",
+    code: "BIBER34",
     // Vorderseite der Karte: Logo (wird schwarz eingefärbt) auf farbigem Grund
     logo: "logo/es-webdev-vorlage-02.png",
     cardColor: "#ff4413",
@@ -36,27 +36,33 @@ window.GAME_CONFIG = {
   },
 
   // ----------------------------------------------------------
-  //  Eigener Song (optional)
-  //  Datei z.B. in den Ordner "music/" legen und hier eintragen.
-  //  Tempo und Beats werden automatisch erkannt. Ohne Datei
-  //  (file: "") läuft die eingebaute Musik.
+  //  Lieder zur Auswahl
+  //  Datei in den Ordner "music/" legen und hier einen Eintrag
+  //  hinzufügen – jeder Eintrag erscheint auf dem Auswahl-Bildschirm.
+  //  Tempo und Beats werden automatisch erkannt.
+  //  Ein Eintrag mit file: "" spielt die eingebaute Musik.
+  //
+  //  Mögliche Felder pro Lied:
+  //    file      Pfad zur Datei (MP3, M4A, OGG, WAV)
+  //    title     Anzeigename (leer = Dateiname)
+  //    artist    kleine Zeile unter dem Titel (optional)
+  //    startAt   ab Sekunde X im Lied starten
+  //    duration  so viele Sekunden lang spielen
+  //    volume    Lautstärke, 1 = normal
+  //    mode      Wie die Noten gesetzt werden:
+  //                "auto"  = selbst erkennen (Standard)
+  //                "beat"  = festes Beat-Raster – für gleichmäßigen Takt (Lofi, Pop, Elektro)
+  //                "onset" = auf hörbare Einsätze – für Tempowechsel (Klassik, Live-Musik)
+  //    bpm, firstBeat   nur falls die Erkennung danebenliegt
+  //                     (Seite mit ?debug öffnen zeigt die erkannten Werte)
   // ----------------------------------------------------------
-  song: {
-    file: "music/hungarian_dance.mp3",                // z.B. "music/mein-lied.mp3"
-    title: "",               // wird auf dem Startbildschirm angezeigt
-    startAt: 0,              // ab Sekunde X im Lied starten
-    duration: 90,            // so viele Sekunden lang spielen
-    volume: 1,
-    // Wie die Noten gesetzt werden:
-    //  "auto"  = selbst erkennen (Standard)
-    //  "beat"  = festes Beat-Raster – für Lieder mit gleichmäßigem Takt (Lofi, Pop, Elektro)
-    //  "onset" = auf die hörbaren Einsätze – für Lieder mit Tempowechseln (Klassik, Live-Musik)
-    mode: "auto",
-    // Nur falls die automatische Erkennung danebenliegt
-    // (Startseite mit ?debug zeigt die erkannten Werte):
-    bpm: null,               // z.B. 85
-    firstBeat: null,         // Sekunde des ersten Beats im Lied, z.B. 0.42
-  },
+  songs: [
+    { file: "music/hungarian_dance.mp3", title: "Hungarian Dance", artist: "Johannes Brahms", startAt: 0, duration: 90, mode: "auto" },
+     { file: "music/fairy.mp3", title: "Fairy Fountain", artist: "", startAt: 0, duration: 52 },
+     { file: "music/Song.mp3", title: "Song Of Storms", artist: "", startAt: 0, duration: 64 }
+    // { file: "music/lied-4.mp3", title: "Lied 4", artist: "", startAt: 0, duration: 90 },
+    // { file: "", title: "Eingebauter Beat" },
+  ],
 
   // Klick-Geräusch beim Treffen
   hitSounds: true,
